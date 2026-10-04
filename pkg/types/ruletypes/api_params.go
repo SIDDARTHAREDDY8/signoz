@@ -299,6 +299,16 @@ func (r *PostableRule) processRuleDefaults() {
 				r.NotificationSettings.Renotify.AlertStates = append(r.NotificationSettings.Renotify.AlertStates, StateNoData)
 			}
 		}
+
+		// Normalize the legacy v4 builderQueries map into v5 queries so that
+		// rules created via the API with the v4 payload shape are evaluated
+		// by the ruler instead of silently never firing.
+		// See https://github.com/SigNoz/signoz/issues/10823.
+		if cq := r.RuleCondition.CompositeQuery; len(cq.Queries) == 0 && len(cq.BuilderQueries) > 0 {
+			if envelopes := migrateBuilderQueriesToV5(cq.BuilderQueries); len(envelopes) > 0 {
+				cq.Queries = envelopes
+			}
+		}
 	}
 }
 

@@ -102,6 +102,14 @@ func (QueryType) Enum() []any {
 type AlertCompositeQuery struct {
 	Queries []qbtypes.QueryEnvelope `json:"queries" required:"true"`
 
+	// BuilderQueries carries the legacy v4 builder query map accepted by
+	// POST /api/v1/rules (condition.compositeQuery.builderQueries). It is
+	// normalized into Queries during unmarshal (see processRuleDefaults) so
+	// that rules created with the v4 payload shape are evaluated by the
+	// ruler's v5 path instead of silently never firing.
+	// See https://github.com/SigNoz/signoz/issues/10823.
+	BuilderQueries map[string]json.RawMessage `json:"builderQueries,omitempty"`
+
 	PanelType PanelType `json:"panelType" required:"true"`
 	QueryType QueryType `json:"queryType" required:"true"`
 	// Unit for the time series data shown in the graph
