@@ -14,6 +14,7 @@ import (
 	"github.com/SigNoz/signoz/pkg/sqlstore"
 	"github.com/SigNoz/signoz/pkg/types/opamptypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
+	"github.com/uptrace/bun"
 
 	"github.com/open-telemetry/opamp-go/protobufs"
 	opampTypes "github.com/open-telemetry/opamp-go/server/types"
@@ -69,6 +70,21 @@ func (agent *Agent) Upsert() error {
 	return nil
 }
 
+// lastNAgentsSubquery selects the agent_ids of the n most recent agents in the
+// given org. DISTINCT is intentionally not used: agent_id is unique, and
+// SELECT DISTINCT with ORDER BY on a non-selected column (created_at) is
+// rejected by Postgres (SQLSTATE 42P10). See
+// https://github.com/SigNoz/signoz/issues/12308.
+func lastNAgentsSubquery(db *bun.DB, orgID valuer.UUID, n int) *bun.SelectQuery {
+	return db.
+		NewSelect().
+		Column("agent_id").
+		Model(new(opamptypes.StorableAgent)).
+		Where("org_id = ?", orgID).
+		OrderExpr("created_at DESC").
+		Limit(n)
+}
+
 // keep only the last 50 agents in the database
 func (agent *Agent) KeepOnlyLast50Agents(ctx context.Context) {
 	// Delete all agents except the last 50 in a single query
@@ -77,13 +93,7 @@ func (agent *Agent) KeepOnlyLast50Agents(ctx context.Context) {
 		Model(new(opamptypes.StorableAgent)).
 		Where("org_id = ?", agent.OrgID).
 		Where("agent_id NOT IN (?)",
-			agent.store.BunDB().
-				NewSelect().
-				ColumnExpr("distinct(agent_id)").
-				Model(new(opamptypes.StorableAgent)).
-				Where("org_id = ?", agent.OrgID).
-				OrderExpr("created_at DESC").
-				Limit(50)).
+			lastNAgentsSubquery(agent.store.BunDB(), agent.OrgID, 50)).
 		Exec(ctx)
 	if err != nil {
 		agent.logger.Error("failed to delete old agents", errors.Attr(err))
